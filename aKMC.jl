@@ -268,6 +268,32 @@ function dump_CONFIG()
     end;
 end
 
+function write_traj()
+
+    global HFLatticeSites
+    global OLatticeSites
+    global Time
+    #Dump trajectory to text files
+
+    nb_Hf,nb_O = size(HFLatticeSites)[1],size(OLatticeSites)[1]
+
+    traj = open("trajectory.txt", "a")
+
+    println(traj, nb_Hf+nb_O)
+    println(traj, Time)
+
+    count_Hf,count_O = 1,1
+    while count_Hf < nb_Hf
+        println(traj, join(repr.(HFLatticeSites[count_Hf,4:6]),", "))
+        count_Hf = count_Hf + 1
+    end;
+
+    while count_O < nb_O
+        println(traj, join(repr.(OLatticeSites[count_O,4:6]),", "))
+        count_O = count_O + 1
+    end;
+end
+
 function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
     ImportAtoms=false;
 
@@ -462,10 +488,9 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                 end;
 
                 py"""
-                def dimer_search(targ,fmax=0.01,cutoff=2):
+                def dimer_search(oxygen_tag, dimer_searches=5):
 
                     #auxiliary packages
-
                     import os
                     import math
                     import copy
@@ -564,26 +589,31 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
                     #auxiliary dimer method functions
 
-                    def kmc_boltz(dE,v0=0.75,Kb_ev=8.617333262145e-5,Temp=2400):
-                        return v0*np.exp(-dE/(Kb_ev*Temp),dtype=np.float128)
+                    #boltzmann acceptance criterion
+                    def kmc_boltz(dE,v0=0.75,Kb_ev=8.617333262145e-5,Temp=2400,upper_bound=1):
+                        return v0*np.exp(-dE/(Kb_ev*Temp),dtype=np.float128) / upper_bound
 
+                    def advance_time(nb_possible_transitions,upper_bound=1):
+                        u = np.random.random()
+                        den = nb_possible_transitions * upper_bound
+                        dt = np.log(1/u) / den
+                        return dt
+
+                    #auxiliary function to quickly print time
                     def pt(p0):
                         print("Time: " +str(time.time() - p0))
 
-
                     #construction of the structure
                     both = Hf + Oxy
-                    target = int(len(Hf) + targ)
+                    target = int(len(Hf) + oxygen_tag)
                     n = len(both)
                     Kb = 1.380649e-23
                     p0 = time.time()
-
 
                     #initial position
                     r0 = both.positions[target]
                     r0b = copy.deepcopy(r0)
                     #print(r0)
-
 
                     #setting the mask
                     mask = [True] * len(both)
@@ -592,15 +622,13 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     both.set_constraint(constraint)
                     #print(mask)
 
-
                     #auxiliary parameters
                     parameters = {'pair_style': 'comb',
-                                  'pair_coeff': ['TesselationPoints_Oxy_removedOverlap/merge_kmc/ffield.comb O Hf']}
-                    files = ['TesselationPoints_Oxy_removedOverlap/merge_kmc/ffield.comb']
+                                  'pair_coeff': ['ffield.comb O Hf']}
                     #lammps = LAMMPS(parameters=parameters, files=files)
                     lammps = LAMMPS()
                     sig,eps = 1.77,0.345
-
+                    upper_bound = 1
 
                     #setting the calculator
                     both.calc = lammps
@@ -610,51 +638,78 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     #print('e0,r0: ({},{})'.format(str(e0),str(r0)))
                     #pt(p0)
 
+                    # dimer search method
+                    def dimer_search():
 
-                    #trajectory log
-                    traj = Trajectory('dimer_both.traj', 'w', both)
-                    traj.write()
-                    d_mask = [not i for i in mask]
+                        #trajectory log
+                        traj = Trajectory('dimer_both.traj', 'w', both)
+                        traj.write()
+                        d_mask = [not i for i in mask]
 
-                    #setting the dimer up
-                    d_control = DimerControl(initial_eigenmode_method='displacement',
-                                             displacement_method='vector',
-                                             #displacement_center=target,
-                                             #displacement_radius=1.0,
-                                             #number_of_displacement_atoms=10,
-                                             logfile=None,
-                                             mask=d_mask)
-                    d_atoms = MinModeAtoms(both, d_control)
+                        #setting the dimer up
+                        d_control = DimerControl(#initial_eigenmode_method='displacement',
+                                                 #displacement_method='vector',
+                                                 initial_eigenmode_method='gauss',
+                                                 displacement_method='gauss',
+                                                 logfile=None,
+                                                 mask=d_mask)
+                        d_atoms = MinModeAtoms(both, d_control)
 
-                    displacement_vector = np.zeros((n, 3))
-                    displacement_vector[target] = [0,0,-0.0001]
-                    d_atoms.displace(displacement_vector=displacement_vector)
+                        #displace the dimer
+                        #displacement_vector = np.zeros((n, 3))
+                        #displacement_vector[target] = [0,0,-0.0001]
+                        gauss_std,fmax = 0.005,0.01
+                        d_atoms.displace(gauss_std=gauss_std) #displacement_vector=displacement_vector
+                        dim_rlx = MinModeTranslate(d_atoms,
+                                               trajectory=traj,
+                                               logfile='logfile.txt')
+                        dim_rlx.run(fmax=fmax)
+                        open('logfile.txt', 'w').close()
 
-                    dim_rlx = MinModeTranslate(d_atoms,
-                                           trajectory=traj,
-                                           logfile='logfile.txt')
-                    dim_rlx.run(fmax=fmax)
+                        #trajectory
+                        trajectory = False
+                        if trajectory:
+                            loadtraj = Trajectory('dimer_both.traj')
+                            logtraj = []
+                            for atoms in loadtraj:
+                                logtraj.append(atoms)
 
-                    #trajectory
-                    loadtraj = Trajectory('dimer_both.traj')
-                    logtraj = []
-                    for atoms in loadtraj:
-                        logtraj.append(atoms)
+                        #final position
+                        #print(d_atoms.get_positions()[target])
 
+                        #evaluate the energy barrier
+                        #eb = both.get_potential_energy()
+                        #diff = eb - e0
+                        rb = copy.deepcopy(both.positions[target])
+                        rb_round = np.around(rb,3)
+                        #print('dE = %f eV' % diff)
+                        #print('eb,rb: ({},{})'.format(str(eb),str(rb)))
+                        #pt(p0)
 
-                    #final position
-                    #print(d_atoms.get_positions()[target])
+                        return rb,rb_round
 
-                    #evaluate the energy barrier
+                    #perform a finite amount of dimer searches
+                    saddle_points,saddle_points_round = [],[]
+                    for _ in range(dimer_searches):
+                        saddle_trial,saddle_trial_round = dimer_search()
+                        #if saddle_trial.all() not in saddle_points:
+                        if not any((saddle_trial_round == x).all() for x in saddle_points_round):
+                            saddle_points.append(saddle_trial)
+                            saddle_points_round.append(saddle_trial_round)
+                        both.positions[target] = r0b
+                    m = len(saddle_points)
+                    #print(m)
+
+                    #pick a saddle point
+                    j = np.random.randint(len(saddle_points))
+                    rb = saddle_points[j]
+                    both.positions[target] = rb
                     eb = both.get_potential_energy()
                     diff = eb - e0
-                    rb = both.positions[target]
-                    #print('dE = %f eV' % diff)
-                    #print('eb,rb: ({},{})'.format(str(eb),str(rb)))
-                    #pt(p0)
-
+                    #print(diff)
 
                     #iterate towards next position
+                    #cutoff = 3
                     ef_tmp,rf_tmp = np.inf,None
                     for point in OxyTr.get_positions():
                         #if sp.spatial.distance.euclidean(r0b,point) < cutoff:
@@ -665,16 +720,9 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
                     #accept or reject translation
                     accept = False
-                    #mino,oxyg = np.inf,None
-                    #for point in Oxy.get_positions():
-                        #if sp.spatial.distance.euclidean(rf_tmp,point) < mino:
-                            #if sp.spatial.distance.euclidean(r0b,point) > 0:
-                                #mino,oxyg = sp.spatial.distance.euclidean(rf_tmp,point),point
-
                     #print('probability: ' + str(kmc_boltz(diff)))
                     both.positions[target] = r0b
                     print(kmc_boltz(diff))
-                    #if mino > 0.5*sig:
                     if np.random.random() < kmc_boltz(diff):
                         both.positions[target] = rf_tmp
                         ef,rf = ef_tmp,rf_tmp
@@ -682,14 +730,16 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     else:
                         ef,rf = e0,r0
                         both.positions[target] = r0b
-
                     #print('ef,rf,fo: ({},{})'.format(str(ef),str(rf),str(fo)))
-                    print('accepted: ' + str(accept) + '<<<<<<<<<<<<<<<')
+                    print('Accepted: ' + str(accept) + '<<<<<<<<<<<<<<<<')
                     #pt(p0)
 
-                    return diff,rf
+                    #advance time
+                    dt = advance_time(nb_possible_transitions=m,upper_bound=1)
+
+                    return diff,rf,dt
                 """
-                diff,rf = py"dimer_search"(indi,0.01)
+                diff,rf,dt = py"dimer_search"(indi)
 
                 """
                 EnergyVector =EnergyEvalSim(LMPvect,OLatticeSites,HFLatticeSites,PossibleNeighbors,Temp,MD_timestep,SimDim);
@@ -708,10 +758,12 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                 #OLatticeSites=vcat(OLatticeSites,[LocOxy[1] 4 0 PossibleNeighbors[moveAccepted,1:3]' 1]);
                 r0bx, r0by, r0bz = rf
                 OLatticeSites=vcat(OLatticeSites,[LocOxy[1] 4 0 r0bx r0by r0bz 1]);
+                Time = Time + dt
 
                 ##################################################################
 
                 println("Minimize Coords<<<<<<<<<<<<<<<")
+                println(Time)
 
                 OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
 
@@ -720,7 +772,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
             end
 
             catch e
-                println(e.msg)
+                showerror(stdout, e)
 
             end
 
@@ -730,6 +782,10 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
             @time OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,mediumMinSteps,largeMDsteps);
             OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
         end
+
+        if MoveCounter % 10 == 0
+            write_traj()
+        end;
 
         MoveCounter=MoveCounter+1
         dump_CONFIG();
