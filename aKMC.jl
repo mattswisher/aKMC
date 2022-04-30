@@ -297,7 +297,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
     #KMC Event rates
     AdsRate=((Press*100000)./sqrt(2*pi*MassO2*Kb*Temp)*(RepX*RepY*alpha^2*1e-20) / 1e9)^-1; #Impact Rate estimated by molecular impingement rate (Ideal Gas)
     TrsRate=KMCparams[1]; # Expected time for atom translation move [nanoseconds per atom]
-    ImpactScalingFactor=KMCparams[2]/alpha; # Impact strength (low numbers increase impact depth)
+    #ImpactScalingFactor=KMCparams[2]/alpha; # Impact strength (low numbers increase impact depth)
 
     #MD parameters
     global MD_timestep=.0005;
@@ -307,7 +307,8 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
     smallMDsteps=10;
     mediumMinSteps=50;
     mediumMDsteps=250;
-    largeMDsteps=10000;
+    largeMDsteps=25000;
+	surfaceDepthInCells=0.9;
     global LMPvect=startN_LAMMPS_instances(SetMD_Sims);
 
 
@@ -330,7 +331,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
     global OxAdsorbed=[0 0]; #Number of adsorbed oxygen atoms [time,#atoms]
     global PossibleNeighbors=[];
 
-    while MoveCounter<1000 #Time<MaxKMCtime
+    while MoveCounter<5000 #Time<MaxKMCtime
         global OLatticeSites
         global HFLatticeSites
         global OxyTrialSites
@@ -346,7 +347,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
         NumbOxy=size(OLatticeSites,1);
         Type1PerNS=1/AdsRate;			#Current O2 impact rate
         Type2PerNS=1/(TrsRate/NumbOxy);	#Current Oxygen translation move rate
-        Type3PerNS=1/AdsRate/200;		#Current Probability of Running a short MD segment
+        Type3PerNS=1/AdsRate/500;		#Current Probability of Running a short MD segment
 
         display([Type1PerNS,Type2PerNS,Type3PerNS]')
 
@@ -360,32 +361,52 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
             println("Add up to 2 Surface Oxygen")
             Time=Time+AdsRate/1*log(1/(rand(1)[1])); #Advance time (no other moves contribute to advancing time)
             LocTrialSites=hcat(OxyTrialSites,zeros(size(OxyTrialSites,1),1));
-            LocTrialSites=vcat(OLatticeSites[:,4:7],LocTrialSites);
-            LocTrialSites=LocTrialSites[maximum(HFLatticeSites[:,6]).-LocTrialSites[:,3].<0.9*alpha,:];
+            LocTrialSites=LocTrialSites[maximum(HFLatticeSites[:,6]).-LocTrialSites[:,3].<surfaceDepthInCells*alpha,:];
+			
+			if isempty(OLatticeSites)
+				NumberSurfOxy=0;
+			else
+				NumberSurfOxy=sum((maximum(HFLatticeSites[:,6]).-OLatticeSites[:,6]) .<surfaceDepthInCells*alpha);
+			end
+			NumberSurfOxySpots=2*RepX*RepY;
+			
+			BounceProbability=NumberSurfOxy/NumberSurfOxySpots;
+			stickBool1=rand()>BounceProbability;
+			
+            #SurfWeights=Weights( exp.(-((maximum(HFLatticeSites[:,6]).-LocTrialSites[:,3])).*ImpactScalingFactor) );
+            #NumSurfSites=size(SurfWeights,1);
+            locSite1=[0,0,0,0];
+            locSite2=[0,0,0,0];
+			
+            if stickBool1
+				LocSiteNum=rand(1:size(LocTrialSites,1));
+				locSite1=LocTrialSites[LocSiteNum,:];
+				OLatticeSites=vcat(OLatticeSites,[size(OLatticeSites,1)+1 4 0 locSite1[1] locSite1[2] locSite1[3] 1]);
+				
+				LocTrialSites=LocTrialSites[1:size(LocTrialSites,1).!=LocSiteNum,:]
 
-            SurfWeights=Weights( exp.(-((maximum(HFLatticeSites[:,6]).-LocTrialSites[:,3])).*ImpactScalingFactor) );
-            NumSurfSites=size(SurfWeights,1);
-            LocSiteNum=sample(1:NumSurfSites,SurfWeights,2);
-
-
-            locSite1=LocTrialSites[LocSiteNum[1],:];
-            locSite2=LocTrialSites[LocSiteNum[2],:];
-
-            if locSite1[4] == 0
-                OLatticeSites=vcat(OLatticeSites,[size(OLatticeSites,1)+1 4 0 locSite1[1] locSite1[2] locSite1[3] 1]);
+				BounceProbability=(NumberSurfOxy+1)/NumberSurfOxySpots;
             end
-            if locSite2[4] == 0
+			
+			stickBool2=rand()>BounceProbability;
+            
+			if stickBool2
+				LocSiteNum=rand(1:size(LocTrialSites,1));
+				locSite2=LocTrialSites[LocSiteNum,:];
+
                 oxysep=sqrt((locSite1[1]-locSite2[1])^2+(locSite1[2]-locSite2[2])^2+(locSite1[3]-locSite2[3])^2);
                 if oxysep > MinOxySpacing
                     OLatticeSites=vcat(OLatticeSites,[size(OLatticeSites,1)+1 4 0 locSite2[1] locSite2[2] locSite2[3] 1]);
                 end
             end
             display(size(OLatticeSites))
-            if (locSite1[4] == 0) || (locSite2[4] == 0)
+            
+			if stickBool1|| stickBool2
                 OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,smallMinSteps,smallMDsteps);
+				OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
             end
 
-            OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
+            
 
             #display(size(OxyTrialSites))
 
