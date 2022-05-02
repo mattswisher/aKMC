@@ -388,34 +388,34 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
             Time=Time+AdsRate/1*log(1/(rand(1)[1])); #Advance time (no other moves contribute to advancing time)
             LocTrialSites=hcat(OxyTrialSites,zeros(size(OxyTrialSites,1),1));
             LocTrialSites=LocTrialSites[maximum(HFLatticeSites[:,6]).-LocTrialSites[:,3].<surfaceDepthInCells*alpha,:];
-			
+
 			if isempty(OLatticeSites)
 				NumberSurfOxy=0;
 			else
 				NumberSurfOxy=sum((maximum(HFLatticeSites[:,6]).-OLatticeSites[:,6]) .<surfaceDepthInCells*alpha);
 			end
 			NumberSurfOxySpots=2*RepX*RepY;
-			
+
 			BounceProbability=NumberSurfOxy/NumberSurfOxySpots;
 			stickBool1=rand()>BounceProbability;
-			
+
             #SurfWeights=Weights( exp.(-((maximum(HFLatticeSites[:,6]).-LocTrialSites[:,3])).*ImpactScalingFactor) );
             #NumSurfSites=size(SurfWeights,1);
             locSite1=[0,0,0,0];
             locSite2=[0,0,0,0];
-			
+
             if stickBool1
 				LocSiteNum=rand(1:size(LocTrialSites,1));
 				locSite1=LocTrialSites[LocSiteNum,:];
 				OLatticeSites=vcat(OLatticeSites,[size(OLatticeSites,1)+1 4 0 locSite1[1] locSite1[2] locSite1[3] 1]);
-				
+
 				LocTrialSites=LocTrialSites[1:size(LocTrialSites,1).!=LocSiteNum,:]
 
 				BounceProbability=(NumberSurfOxy+1)/NumberSurfOxySpots;
             end
-			
+
 			stickBool2=rand()>BounceProbability;
-            
+
 			if stickBool2
 				LocSiteNum=rand(1:size(LocTrialSites,1));
 				locSite2=LocTrialSites[LocSiteNum,:];
@@ -426,13 +426,13 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                 end
             end
             display(size(OLatticeSites))
-            
+
 			if stickBool1|| stickBool2
                 OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,smallMinSteps,smallMDsteps);
 				OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
             end
 
-            
+
 
             #display(size(OxyTrialSites))
 
@@ -713,10 +713,9 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     saddle_points,saddle_points_round = [],[]
                     for _ in range(dimer_searches):
                         saddle_trial,saddle_trial_round = dimer_search()
-                        #if saddle_trial.all() not in saddle_points:
-                        if not any((saddle_trial_round == x).all() for x in saddle_points_round):
-                            saddle_points.append(saddle_trial)
-                            saddle_points_round.append(saddle_trial_round)
+                        #if not any((saddle_trial_round == x).all() for x in saddle_points_round):
+                        saddle_points.append(saddle_trial)
+                            #saddle_points_round.append(saddle_trial_round)
                         both.positions[target] = r0b
                     m = len(saddle_points)
                     #print(m)
