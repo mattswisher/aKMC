@@ -544,7 +544,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     os.environ['LAMMPS_PATH'] = "/export/apps/lammps-29Sep21/"
                     os.environ['LAMMPS_POTENTIALS'] = "/export/apps/lammps-29Sep21/potentials/"
                     os.environ['LAMMPS_COMMAND'] = "/export/apps/lammps-29Sep21/build/lmp"
-                    os.environ['WORKDIR'] = "/home/mswisher/aKMC-main"
+                    os.environ['WORKDIR'] = "/home/jluzz/aKMC-v3_2"
                     os.environ['ASE_LAMMPSRUN_COMMAND'] = "/export/apps/lammps-29Sep21/build/lmp"
 
                     #data post-processing
