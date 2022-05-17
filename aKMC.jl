@@ -54,7 +54,7 @@ function generateBaseBCCLattice(RepX, RepY, RepZ, alpha::Any=3.5416)
     return HFLatticeSites
 end
 
-function GenerateOxygenTrialPoints(RepX, RepY, RepZ, BaseLattice::Matrix=HFLatticeSites,alpha::Any=3.5416, mergePointCuttoff::Float64=.66)
+function GenerateOxygenTrialPoints(RepX, RepY, RepZ, BaseLattice::Matrix=HFLatticeSites,alpha::Any=3.5416, mergePointCuttoff::Float64=1.00)
     xSize=alpha*RepX;
     ySize=alpha*RepY;
     zSize=alpha*RepZ;
@@ -307,7 +307,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
     smallMDsteps=10;
     mediumMinSteps=50;
     mediumMDsteps=250;
-    largeMDsteps=25000;
+    largeMDsteps=10000;
 	surfaceDepthInCells=0.9;
     global LMPvect=startN_LAMMPS_instances(SetMD_Sims);
 
@@ -348,11 +348,12 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
         Type1PerNS=1/AdsRate;			#Current O2 impact rate
         Type2PerNS=1/(TrsRate/NumbOxy);	#Current Oxygen translation move rate
         Type3PerNS=1/AdsRate/500;		#Current Probability of Running a short MD segment
-
+		println("Probability List:")
         display([Type1PerNS,Type2PerNS,Type3PerNS]')
 
         FPdeck=Type1PerNS+Type2PerNS+Type3PerNS;	#Normalize probability distribution
         draw=rand(1)*FPdeck;			#Pick which type of move
+		
         display(draw)
         if draw[1]<Type1PerNS			#Oxygen molecule impacts surface
             #Add atom to surface
@@ -405,7 +406,8 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                 OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,smallMinSteps,smallMDsteps);
 				OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
             end
-
+			display(size(OLatticeSites))
+			println("End O2 insertion")
             
 
             #display(size(OxyTrialSites))
@@ -414,7 +416,6 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
         elseif draw[1]<Type1PerNS+Type2PerNS && NumbOxy>0
             println("Translate an Oxygen Atom")
 
-            try
 
             indi = rand(1:size(OLatticeSites,1),1)
             LocOxy=OLatticeSites[indi,:];	#Select a random oxygen atom
@@ -459,7 +460,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
             Zlo=LocOxy[6]-alpha+1.0;
             Zhi=LocOxy[6]+alpha-1.0;
             PossibleNeighbors=PossibleNeighbors[(PossibleNeighbors[:,3].<Zhi) .& (PossibleNeighbors[:,3].>Zlo),:];
-
+				
             if ~isempty(PossibleNeighbors)
                 #start with original site
                 PossibleNeighbors=hcat(PossibleNeighbors,zeros(size(PossibleNeighbors,1),1));
@@ -468,11 +469,13 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     PossibleNeighbors=PossibleNeighbors[sample(1:size(PossibleNeighbors,1),MaxConcurrentSims-1, replace=false),:];
                 end
                 PossibleNeighbors=vcat(LocOxy[4:7]',PossibleNeighbors);
-                display(PossibleNeighbors)
+				PossibleNeighbors=PossibleNeighbors[1.0 .!= PossibleNeighbors[:,4],:];
+                println("Possible Neighbors:")
+				display(PossibleNeighbors)
 
                 NumSites=size(PossibleNeighbors,1);
 
-                OLatticeSites=OLatticeSites[LocOxy[1].!=OLatticeSites[:,1],:]; #Remove Moving Atom From List
+                #OLatticeSites=OLatticeSites[LocOxy[1].!=OLatticeSites[:,1],:]; #Remove Moving Atom From List
 
                 ##################################################################
 
@@ -483,7 +486,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                 end;
 
                 py"""
-                def dimer_search(targ,fmax=0.01,cutoff=2):
+                def dimer_search(targ,xdim,ydim,zdim,fmax=0.01,cutoff=2):
 
                     #auxiliary packages
 
@@ -594,6 +597,9 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
                     #construction of the structure
                     both = Hf + Oxy
+                    both.set_cell([xdim,ydim,zdim])
+                    both.set_pbc([True, True, False])
+                    #print(both)
                     target = int(len(Hf) + targ)
                     n = len(both)
                     Kb = 1.380649e-23
@@ -710,49 +716,40 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
                     return diff,rf
                 """
-                diff,rf = py"dimer_search"(indi,0.01)
-
-                """
-                EnergyVector =EnergyEvalSim(LMPvect,OLatticeSites,HFLatticeSites,PossibleNeighbors,Temp,MD_timestep,SimDim);
-
-                #Use boltzmann weights to find relative probability of each state
-                options=1:NumSites;
-                weights=exp.(-EnergyVector./Temp./Kb_ev);
-                #Random sample to determine if we accept move
-                weights[isnan.(weights)].=1;
-                moveAccepted=sample(options,Weights(weights));
-                display(weights)
-                display(moveAccepted)
-                #OLatticeSites[PossibleNeighbors[moveAccepted,1],7]=1;
-                """
-
+				
+                diff,rf = py"dimer_search"(indi,SimDim[1],SimDim[2],SimDim[3],0.01);
+				println("This is diff:")
+				display(diff)
+				println("This is rf:")
+				display(rf)
+				println("Dimer Search Complete")
                 #OLatticeSites=vcat(OLatticeSites,[LocOxy[1] 4 0 PossibleNeighbors[moveAccepted,1:3]' 1]);
                 r0bx, r0by, r0bz = rf
                 OLatticeSites=vcat(OLatticeSites,[LocOxy[1] 4 0 r0bx r0by r0bz 1]);
-
-                ##################################################################
 
                 println("Minimize Coords<<<<<<<<<<<<<<<")
 
                 OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
 
+			display(size(OLatticeSites))
+			println("End Oxy translate")
             else
                 println("skipping: no viable destinations")
             end
 
-            catch e
-                println(e.msg)
 
-            end
 
             ## ^^^^^^^^^^^^^^^^^^^ End Translation Move
         else
             println("Run Short MD Simulation")
             @time OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,mediumMinSteps,largeMDsteps);
             OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
+			display(size(OLatticeSites))
+			println("End MD Simulation")
         end
 
         MoveCounter=MoveCounter+1
+		display([MoveCounter,5000])
         dump_CONFIG();
         #display([Time, NumbOxy]);
     end
