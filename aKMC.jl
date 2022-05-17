@@ -509,7 +509,9 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                 end;
 
                 py"""
+
                 def dimer_search(oxygen_tag,xdim,ydim,zdim, dimer_searches=5):
+
 
                     #auxiliary packages
                     import os
@@ -626,10 +628,12 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
                     #construction of the structure
                     both = Hf + Oxy
+
                     both.set_cell([xdim,ydim,zdim])
                     both.set_pbc([True, True, False])
                     target = int(len(Hf) + oxygen_tag - 1)
                     #print(target)
+
                     n = len(both)
                     Kb = 1.380649e-23
                     p0 = time.time()
@@ -762,7 +766,9 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
                     return diff,rf,dt
                 """
+
                 diff,rf,dt = py"dimer_search"(indi,SimDim[1],SimDim[2],SimDim[3])
+
 
                 """
                 EnergyVector =EnergyEvalSim(LMPvect,OLatticeSites,HFLatticeSites,PossibleNeighbors,Temp,MD_timestep,SimDim);
@@ -796,8 +802,9 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
             catch e
                 showerror(stdout, e)
+
 				println("<><><><><><>Attempt Recovery From Failed Dimer Search<><><><><><>")
-			
+
             end
 
             ## ^^^^^^^^^^^^^^^^^^^ End Translation Move
