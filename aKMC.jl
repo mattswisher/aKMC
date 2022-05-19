@@ -373,7 +373,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
         NumbOxy=size(OLatticeSites,1);
         Type1PerNS=1/AdsRate;			#Current O2 impact rate
         Type2PerNS=1/(TrsRate/NumbOxy);	#Current Oxygen translation move rate
-        Type3PerNS=1/AdsRate/500;		#Current Probability of Running a short MD segment
+        Type3PerNS=1/AdsRate/400;		#Current Probability of Running a short MD segment
 
         display([Type1PerNS,Type2PerNS,Type3PerNS]')
 
@@ -497,8 +497,8 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                 display(PossibleNeighbors)
 
                 NumSites=size(PossibleNeighbors,1);
-
-                OLatticeSites=OLatticeSites[LocOxy[1].!=OLatticeSites[:,1],:]; #Remove Moving Atom From List
+				#display(LocOxy)
+                #OLatticeSites=OLatticeSites[LocOxy[1].!=OLatticeSites[:,1],:]; #Remove Moving Atom From List
 
                 ##################################################################
 
@@ -509,7 +509,9 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                 end;
 
                 py"""
-                def dimer_search(oxygen_tag, dimer_searches=5):
+
+                def dimer_search(oxygen_tag,xdim,ydim,zdim, dimer_searches=5):
+
 
                     #auxiliary packages
                     import os
@@ -626,7 +628,12 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
                     #construction of the structure
                     both = Hf + Oxy
-                    target = int(len(Hf) + oxygen_tag)
+
+                    both.set_cell([xdim,ydim,zdim])
+                    both.set_pbc([True, True, False])
+                    target = int(len(Hf) + oxygen_tag - 1)
+                    #print(target)
+
                     n = len(both)
                     Kb = 1.380649e-23
                     p0 = time.time()
@@ -759,7 +766,9 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
                     return diff,rf,dt
                 """
-                diff,rf,dt = py"dimer_search"(indi)
+
+                diff,rf,dt = py"dimer_search"(indi,SimDim[1],SimDim[2],SimDim[3])
+
 
                 """
                 EnergyVector =EnergyEvalSim(LMPvect,OLatticeSites,HFLatticeSites,PossibleNeighbors,Temp,MD_timestep,SimDim);
@@ -794,6 +803,8 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
             catch e
                 showerror(stdout, e)
 
+				println("<><><><><><>Attempt Recovery From Failed Dimer Search<><><><><><>")
+
             end
 
             ## ^^^^^^^^^^^^^^^^^^^ End Translation Move
@@ -801,6 +812,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
             println("Run Short MD Simulation")
             @time OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,mediumMinSteps,largeMDsteps);
             OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
+			Time=Time+(MD_timestep*largeMDsteps*.001);
         end
 
         if MoveCounter % 10 == 0

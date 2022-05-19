@@ -2,7 +2,7 @@
 using LAMMPS
 
 function startN_LAMMPS_instances(N::Int)
-	LMPvect=[ LMP(["-screen","none","-sf", "omp", "-pk", "omp 4"]) for i=1:N]
+	LMPvect=[ LMP(["-screen","none","-sf", "omp", "-pk", "omp 6"]) for i=1:N]
 	#LMPvect=[ LMP(["-sf", "omp", "-pk", "omp 4"]) for i=1:N]
 	return LMPvect
 end
@@ -68,20 +68,20 @@ function MinimizeCoords(Full_LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timest
 		
 		command(LMP_v,"fix  101  Hf-fixed  move linear  0.0  0.0  0.0  units box ");
 
-		command(LMP_v,"fix  102 Hf-temp   nvt temp " * string(Temp) * " " * string(Temp) * " "  * string(100.0*MD_timestep));
+		command(LMP_v,"fix  102 Hf-temp   nvt temp " * string(Temp) * " " * string(Temp) * " "  * string(50.0*MD_timestep));
 		command(LMP_v,"fix  103 Hf-nve   nve");
 		command(LMP_v,"fix  104 Oxygen   nve");
 		
-		command(LMP_v,"delete_atoms overlap 0.5 all all")
+		#command(LMP_v,"delete_atoms overlap 0.5 all all")
 		
 		command(LMP_v,"compute  AtomPE all pe/atom ");
 		command(LMP_v,"compute  AtomXYZ all property/atom x y z ");
 		command(LMP_v,"compute  MyTestPE all reduce sum c_AtomPE");
 		command(LMP_v,"compute  MyTestLoc all reduce sum c_AtomXYZ[1] c_AtomXYZ[2] c_AtomXYZ[3]");
-		command(LMP_v,"thermo 	1");
+		command(LMP_v,"thermo 	20");
 		command(LMP_v,"thermo_style 	custom step temp press etotal atoms c_MyTestPE spcpu");
 		command(LMP_v,"min_style sd");
-		command(LMP_v,"min_modify dmax 0.1");
+		command(LMP_v,"min_modify dmax 0.01");
 		command(LMP_v,"minimize	1.0e-10  1.0e-10  " * string(MinSteps) * " "  * string(MinSteps));
 		command(LMP_v,"run " * string(MDsteps));
 		
