@@ -792,6 +792,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                 ##################################################################
 
                 println("Minimize Coords<<<<<<<<<<<<<<<")
+		OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,smallMinSteps,smallMDsteps);
                 println(Time)
 
                 OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
