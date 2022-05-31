@@ -255,9 +255,9 @@ function dump_CONFIG()
     global OLatticeSites
     #Dump points to text files
 
-    open("trialOxygen.dat", "w") do io
-    writedlm(io, OxyTrialSites)
-    end;
+    #open("trialOxygen.dat", "w") do io
+    #writedlm(io, OxyTrialSites)
+    #end;
 
     open("base.dat", "w") do io
     writedlm(io, HFLatticeSites)
@@ -294,14 +294,28 @@ function write_traj()
     end;
 end
 
+function write_time()
+
+    global Time
+    global OLatticeSites
+
+    NumbOxy=size(OLatticeSites,1);
+
+    traj = open("time.txt", "a")
+
+    println(traj, NumbOxy)
+    println(traj, Time)
+
+end
+
 function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
     ImportAtoms=false;
 
     #Set rough material properties
     alpha=3.5416;	#lattice parameters (assuming cubic)
-    RepX=6;		#lattice unit cells in X dim
-    RepY=6;		#lattice unit cells in Y dim
-    RepZ=8;	#lattice unit cells in Z dim
+    RepX=9;		#lattice unit cells in X dim
+    RepY=9;		#lattice unit cells in Y dim
+    RepZ=18;	    #lattice unit cells in Z dim
     HfOxygenBondDist=1.77;   #angstroms (Covalent radius or S-orbital radius) is also approx sigma LJ parameter
     # Lattice Generation Parameters
     MinOxySpacing=1.65; #angstroms 	spacing used when grid searching for floating lattice points
@@ -337,7 +351,6 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 	surfaceDepthInCells=0.9;
     global LMPvect=startN_LAMMPS_instances(SetMD_Sims);
 
-
     println("Generating Initial Configuration")
     #Initialize HF Lattice
     global HFLatticeSites=generateBaseBCCLattice(RepX,RepY,RepZ);
@@ -357,7 +370,26 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
     global OxAdsorbed=[0 0]; #Number of adsorbed oxygen atoms [time,#atoms]
     global PossibleNeighbors=[];
 
-    while MoveCounter<5000 #Time<MaxKMCtime
+    #=
+    println("Load Configuration")
+    global HFLatticeSites = reshape([],0,7);
+    global OLatticeSites = reshape([],0,7);
+
+    for line in readlines("base.dat")
+        atom = reshape([parse(Float64, x) for x in split(line, "\t")],1,7)
+        HFLatticeSites=vcat(HFLatticeSites,atom);
+    end
+
+    for line in readlines("baseOxygen.dat")
+        atom = reshape([parse(Float64, x) for x in split(line, "\t")],1,7)
+        OLatticeSites=vcat(OLatticeSites,atom);
+    end
+    println("Configuration Loaded")
+    =#
+
+    global OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
+
+    while MoveCounter<50000 #Time<MaxKMCtime
         global OLatticeSites
         global HFLatticeSites
         global OxyTrialSites
@@ -385,7 +417,10 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
             #Advance time
             #Time=Time+AdsRate/2*log(1/(rand(1)[1]));
             println("Add up to 2 Surface Oxygen")
-            Time=Time+AdsRate/1*log(1/(rand(1)[1])); #Advance time (no other moves contribute to advancing time)
+            #Time=Time+AdsRate/1*log(1/(rand(1)[1])); #Advance time (no other moves contribute to advancing time)
+            dt = AdsRate/1*log(1/(rand(1)[1]))
+            Time=Time+dt;
+            print(size(HFLatticeSites))
             LocTrialSites=hcat(OxyTrialSites,zeros(size(OxyTrialSites,1),1));
             LocTrialSites=LocTrialSites[maximum(HFLatticeSites[:,6]).-LocTrialSites[:,3].<surfaceDepthInCells*alpha,:];
 
@@ -510,8 +545,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
                 py"""
 
-                def dimer_search(oxygen_tag,xdim,ydim,zdim, dimer_searches=5):
-
+                def dimer_search(oxygen_tag,xdim,ydim,zdim,dimer_searches=5):
 
                     #auxiliary packages
                     import os
@@ -539,7 +573,6 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     from ase.calculators.lj import LennardJones
                     from ase.calculators.lammpsrun import LAMMPS
                     from ase.calculators.lammpslib import LAMMPSlib
-
 
                     #environment variables
 
@@ -670,8 +703,8 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     def dimer_search():
 
                         #trajectory log
-                        traj = Trajectory('dimer_both.traj', 'w', both)
-                        traj.write()
+                        #traj = Trajectory('dimer_both.traj', 'w', both)
+                        #traj.write()
                         d_mask = [not i for i in mask]
 
                         #setting the dimer up
@@ -686,13 +719,15 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                         #displace the dimer
                         #displacement_vector = np.zeros((n, 3))
                         #displacement_vector[target] = [0,0,-0.0001]
-                        gauss_std,fmax = 0.005,0.01
+                        gauss_std = 0.005
+                        fmax = 0.05
                         d_atoms.displace(gauss_std=gauss_std) #displacement_vector=displacement_vector
                         dim_rlx = MinModeTranslate(d_atoms,
-                                               trajectory=traj,
-                                               logfile='logfile.txt')
+                                               #trajectory=traj,
+                                               #logfile='logfile.txt'
+                                               logfile=None)
                         dim_rlx.run(fmax=fmax)
-                        open('logfile.txt', 'w').close()
+                        #open('logfile.txt', 'w').close()
 
                         #trajectory
                         trajectory = False
@@ -718,6 +753,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
                     #perform a finite amount of dimer searches
                     saddle_points,saddle_points_round = [],[]
+                    search_time = time.time()
                     for _ in range(dimer_searches):
                         saddle_trial,saddle_trial_round = dimer_search()
                         #if not any((saddle_trial_round == x).all() for x in saddle_points_round):
@@ -767,7 +803,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     return diff,rf,dt
                 """
 
-                diff,rf,dt = py"dimer_search"(indi,SimDim[1],SimDim[2],SimDim[3])
+                diff,rf,dt_py = py"dimer_search"(indi,SimDim[1],SimDim[2],SimDim[3],1)
 
 
                 """
@@ -785,14 +821,20 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                 """
 
                 #OLatticeSites=vcat(OLatticeSites,[LocOxy[1] 4 0 PossibleNeighbors[moveAccepted,1:3]' 1]);
+                OLatticeSites=OLatticeSites[LocOxy[1].!=OLatticeSites[:,1],:]; #Remove Moving Atom From List
                 r0bx, r0by, r0bz = rf
                 OLatticeSites=vcat(OLatticeSites,[LocOxy[1] 4 0 r0bx r0by r0bz 1]);
-                Time = Time + dt
+                DiffRate = 2*AdsRate
+                dt = DiffRate/1*log(1/(rand(1)[1]))
+                Time=Time+dt;
 
                 ##################################################################
 
-                println("Minimize Coords<<<<<<<<<<<<<<<")
-                println(Time)
+                if MoveCounter % 15 == 0
+                    println("Minimize Coords<<<<<<<<<<<<<<<")
+                    OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,smallMinSteps,smallMDsteps); # Minimize Coordinates
+                end
+                #println(Time)
 
                 OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
 
@@ -803,27 +845,28 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
             catch e
                 showerror(stdout, e)
 
-				println("<><><><><><>Attempt Recovery From Failed Dimer Search<><><><><><>")
+				println("<><><><><><> Attempt Recovery From Failed Dimer Search <><><><><><>")
 
             end
 
             ## ^^^^^^^^^^^^^^^^^^^ End Translation Move
         else
             println("Run Short MD Simulation")
-            @time OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,mediumMinSteps,largeMDsteps);
+            #@time OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,mediumMinSteps,largeMDsteps);
             OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
 			Time=Time+(MD_timestep*largeMDsteps*.001);
         end
 
-        if MoveCounter % 10 == 0
-            write_traj()
+        if MoveCounter % 15 == 0
+            write_time()
+            rm("log.lammps")
+            open("log.lammps","a")
         end;
 
         MoveCounter=MoveCounter+1
         dump_CONFIG();
-        #display([Time, NumbOxy]);
+        display([Time, NumbOxy]);
     end
-
 end
 
 
