@@ -254,9 +254,9 @@ function dump_CONFIG()
     global OLatticeSites
     #Dump points to text files
 
-    #open("trialOxygen.dat", "w") do io
-    #writedlm(io, OxyTrialSites)
-    #end;
+    open("trialOxygen.dat", "w") do io
+    writedlm(io, OxyTrialSites)
+    end;
 
     open("base.dat", "w") do io
     writedlm(io, HFLatticeSites)
@@ -347,8 +347,8 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
     mediumMinSteps=50;
     mediumMDsteps=250;
     largeMDsteps=25000;
-	surfaceDepthInCells=0.9
-    #surfaceDepthInCells=1.5;
+	#surfaceDepthInCells=0.9;
+    surfaceDepthInCells=1.5;
     global LMPvect=startN_LAMMPS_instances(SetMD_Sims);
 
     println("Generating Initial Configuration")
@@ -493,15 +493,12 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
             Xlo=LocOxy[4]-alpha+1.0;
             Xhi=LocOxy[4]+alpha-1.0;
             if Xlo<0
-
                 Xlo2=Xlo+alpha*RepX;
                 PossibleNeighbors=PossibleNeighbors[(PossibleNeighbors[:,1].>Xlo2) .| (PossibleNeighbors[:,1].<Xhi),:];
             elseif Xhi>alpha*RepX
-
                 Xhi2=Xhi-alpha*RepX;
                 PossibleNeighbors=PossibleNeighbors[(PossibleNeighbors[:,1].>Xlo) .| (PossibleNeighbors[:,1].<Xhi2),:];
             else
-
                 PossibleNeighbors=PossibleNeighbors[(PossibleNeighbors[:,1].<Xhi) .& (PossibleNeighbors[:,1].>Xlo),:];
             end
 
@@ -557,7 +554,6 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     import math
                     import copy
                     import time
-
                     import numpy as np
                     import scipy as sp
 
@@ -570,12 +566,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     from ase.constraints import FixAtoms
 
                     from ase.optimize import BFGS
-                    from ase.optimize import QuasiNewton
-
                     from ase.dimer import DimerControl, MinModeAtoms, MinModeTranslate
-
-                    from ase.calculators.emt import EMT
-                    from ase.calculators.lj import LennardJones
                     from ase.calculators.lammpsrun import LAMMPS
                     from ase.calculators.lammpslib import LAMMPSlib
 
@@ -846,18 +837,15 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 			Time=Time+(MD_timestep*largeMDsteps*.001);
         end
 
-        if MoveCounter % 15 == 0
-            if isfile("log.lammps")
-                rm("log.lammps")
-                open("log.lammps","a")
-            end
-        end;
-
         if MoveCounter % 50 == 0
             write_time()
             if isfile("log_trial.txt")
                 rm("log_trial.txt")
                 open("log_trial.txt","a")
+            end
+            if isfile("log.lammps")
+                rm("log.lammps")
+                open("log.lammps","a")
             end
         end;
 
