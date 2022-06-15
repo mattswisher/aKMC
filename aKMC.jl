@@ -9,7 +9,6 @@ using StatsBase
 using MiniQhull
 using GeometricalPredicates
 using LoopVectorization
-
 using PyCall
 
 include("LMP_EnergyEval3.jl")
@@ -313,9 +312,9 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
     #Set rough material properties
     alpha=3.5416;	#lattice parameters (assuming cubic)
-    RepX=9;		#lattice unit cells in X dim
-    RepY=9;		#lattice unit cells in Y dim
-    RepZ=18;	    #lattice unit cells in Z dim
+    RepX=6;		#lattice unit cells in X dim
+    RepY=6;		#lattice unit cells in Y dim
+    RepZ=10;	#lattice unit cells in Z dim
     HfOxygenBondDist=1.77;   #angstroms (Covalent radius or S-orbital radius) is also approx sigma LJ parameter
     # Lattice Generation Parameters
     MinOxySpacing=1.65; #angstroms 	spacing used when grid searching for floating lattice points
@@ -348,7 +347,8 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
     mediumMinSteps=50;
     mediumMDsteps=250;
     largeMDsteps=25000;
-	surfaceDepthInCells=0.9;
+	surfaceDepthInCells=0.9
+    #surfaceDepthInCells=1.5;
     global LMPvect=startN_LAMMPS_instances(SetMD_Sims);
 
     println("Generating Initial Configuration")
@@ -360,7 +360,6 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
     #Generate Initial OxyTrialSites
     global OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
-
     println("Initial Configuration Obtained")
 
     ## Begin Simulation
@@ -384,12 +383,12 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
         atom = reshape([parse(Float64, x) for x in split(line, "\t")],1,7)
         OLatticeSites=vcat(OLatticeSites,atom);
     end
+
+    global OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
     println("Configuration Loaded")
     =#
 
-    global OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
-
-    while MoveCounter<50000 #Time<MaxKMCtime
+    while MoveCounter<100000 #Time<MaxKMCtime
         global OLatticeSites
         global HFLatticeSites
         global OxyTrialSites
@@ -402,6 +401,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
         global MD_timestep
         global SimDim
 
+        NumbHaf=size(HFLatticeSites,1)
         NumbOxy=size(OLatticeSites,1);
         Type1PerNS=1/AdsRate;			#Current O2 impact rate
         Type2PerNS=1/(TrsRate/NumbOxy);	#Current Oxygen translation move rate
@@ -411,16 +411,16 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 
         FPdeck=Type1PerNS+Type2PerNS+Type3PerNS;	#Normalize probability distribution
         draw=rand(1)*FPdeck;			#Pick which type of move
-        display(draw)
+        #display(draw)
+
         if draw[1]<Type1PerNS			#Oxygen molecule impacts surface
             #Add atom to surface
-            #Advance time
-            #Time=Time+AdsRate/2*log(1/(rand(1)[1]));
             println("Add up to 2 Surface Oxygen")
+            #Advance time
             #Time=Time+AdsRate/1*log(1/(rand(1)[1])); #Advance time (no other moves contribute to advancing time)
-            dt = AdsRate/1*log(1/(rand(1)[1]))
+            dt = AdsRate/(1)*log(1/(rand(1)[1]))
             Time=Time+dt;
-            print(size(HFLatticeSites))
+
             LocTrialSites=hcat(OxyTrialSites,zeros(size(OxyTrialSites,1),1));
             LocTrialSites=LocTrialSites[maximum(HFLatticeSites[:,6]).-LocTrialSites[:,3].<surfaceDepthInCells*alpha,:];
 
@@ -429,16 +429,25 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
 			else
 				NumberSurfOxy=sum((maximum(HFLatticeSites[:,6]).-OLatticeSites[:,6]) .<surfaceDepthInCells*alpha);
 			end
-			NumberSurfOxySpots=2*RepX*RepY;
+			#NumberSurfOxySpots=2*RepX*RepY;
+
+            SurfacePlane = alpha * RepZ;
+            WithinOneCell = SurfacePlane - 5.3;
+            NumberSurfOxySpots = 0;
+            for i in 1:size(HFLatticeSites)[1]
+                if HFLatticeSites[i,6] > WithinOneCell
+                    NumberSurfOxySpots = NumberSurfOxySpots + 1
+                end
+            end
 
 			BounceProbability=NumberSurfOxy/NumberSurfOxySpots;
-			stickBool1=rand()>BounceProbability;
 
             #SurfWeights=Weights( exp.(-((maximum(HFLatticeSites[:,6]).-LocTrialSites[:,3])).*ImpactScalingFactor) );
             #NumSurfSites=size(SurfWeights,1);
             locSite1=[0,0,0,0];
             locSite2=[0,0,0,0];
 
+			stickBool1=rand()>BounceProbability;
             if stickBool1
 				LocSiteNum=rand(1:size(LocTrialSites,1));
 				locSite1=LocTrialSites[LocSiteNum,:];
@@ -450,7 +459,6 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
             end
 
 			stickBool2=rand()>BounceProbability;
-
 			if stickBool2
 				LocSiteNum=rand(1:size(LocTrialSites,1));
 				locSite2=LocTrialSites[LocSiteNum,:];
@@ -460,15 +468,12 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     OLatticeSites=vcat(OLatticeSites,[size(OLatticeSites,1)+1 4 0 locSite2[1] locSite2[2] locSite2[3] 1]);
                 end
             end
-            display(size(OLatticeSites))
+            #display(size(OLatticeSites))
 
 			if stickBool1|| stickBool2
                 OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,smallMinSteps,smallMDsteps);
 				OxyTrialSites=RecalcOxygenLattice(RepX,RepY,RepZ,HFLatticeSites,OLatticeSites,alpha,MinOxySpacing);
             end
-
-
-
             #display(size(OxyTrialSites))
 
 
@@ -529,7 +534,7 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     PossibleNeighbors=PossibleNeighbors[sample(1:size(PossibleNeighbors,1),MaxConcurrentSims-1, replace=false),:];
                 end
                 PossibleNeighbors=vcat(LocOxy[4:7]',PossibleNeighbors);
-                display(PossibleNeighbors)
+                #display(PossibleNeighbors)
 
                 NumSites=size(PossibleNeighbors,1);
 				#display(LocOxy)
@@ -642,11 +647,10 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                     f.close()
                     OxyTr = io.read('baseOxygenTr_nice.xyz')
 
-
                     #auxiliary dimer method functions
 
                     #boltzmann acceptance criterion
-                    def kmc_boltz(dE,v0=0.75,Kb_ev=8.617333262145e-5,Temp=2400,upper_bound=1):
+                    def kmc_boltz(dE,v0=1,Kb_ev=8.617333262145e-5,Temp=2400,upper_bound=1):
                         return v0*np.exp(-dE/(Kb_ev*Temp),dtype=np.float128) / upper_bound
 
                     def advance_time(nb_possible_transitions,upper_bound=1):
@@ -688,14 +692,12 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                                   'pair_coeff': ['ffield.comb O Hf']}
                     #lammps = LAMMPS(parameters=parameters, files=files)
                     lammps = LAMMPS()
-                    sig,eps = 1.77,0.345
-                    upper_bound = 1
 
                     #setting the calculator
                     both.calc = lammps
                     #both.calc = LennardJones(sigma=sig, epsilon=eps)
                     e0 = both.get_potential_energy()
-                    print(e0)
+                    #print(e0)
                     #print('e0,r0: ({},{})'.format(str(e0),str(r0)))
                     #pt(p0)
 
@@ -744,21 +746,18 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                         #eb = both.get_potential_energy()
                         #diff = eb - e0
                         rb = copy.deepcopy(both.positions[target])
-                        rb_round = np.around(rb,3)
-                        #print('dE = %f eV' % diff)
-                        #print('eb,rb: ({},{})'.format(str(eb),str(rb)))
                         #pt(p0)
 
-                        return rb,rb_round
+                        return rb
 
                     #perform a finite amount of dimer searches
-                    saddle_points,saddle_points_round = [],[]
-                    search_time = time.time()
+                    saddle_points = []
+                    #search_time = time.time()
                     for _ in range(dimer_searches):
-                        saddle_trial,saddle_trial_round = dimer_search()
+                        #saddle_trial,saddle_trial_round = dimer_search()
+                        saddle_trial = dimer_search()
                         #if not any((saddle_trial_round == x).all() for x in saddle_points_round):
                         saddle_points.append(saddle_trial)
-                            #saddle_points_round.append(saddle_trial_round)
                         both.positions[target] = r0b
                     m = len(saddle_points)
                     #print(m)
@@ -778,59 +777,49 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
                         #if sp.spatial.distance.euclidean(r0b,point) < cutoff:
                         both.positions[target] = point
                         if both.get_potential_energy() < ef_tmp:
-                            ef_tmp,rf_tmp = both.get_potential_energy(),point
+                            rf_tmp = point
                         both.positions[target] = rb
+
+                    #displacement = rb - r0b
+                    #rf_tmp = r0b + 1.1 * displacement
 
                     #accept or reject translation
                     accept = False
-                    #print('probability: ' + str(kmc_boltz(diff)))
                     both.positions[target] = r0b
                     print(kmc_boltz(diff))
                     if np.random.random() < kmc_boltz(diff):
                         both.positions[target] = rf_tmp
-                        ef,rf = ef_tmp,rf_tmp
+                        rf = rf_tmp
                         accept = True
                     else:
-                        ef,rf = e0,r0
+                        rf = r0
                         both.positions[target] = r0b
                     #print('ef,rf,fo: ({},{})'.format(str(ef),str(rf),str(fo)))
                     print('Accepted: ' + str(accept) + '<<<<<<<<<<<<<<<<')
                     #pt(p0)
 
+                    #minimize single atom
+                    #dyn = BFGS(both)
+                    #dyn.run(fmax=0.05)
+
                     #advance time
-                    dt = advance_time(nb_possible_transitions=m,upper_bound=1)
+                    #dt = advance_time(nb_possible_transitions=m,upper_bound=1)
 
-                    return diff,rf,dt
+                    return diff,rf
                 """
 
-                diff,rf,dt_py = py"dimer_search"(indi,SimDim[1],SimDim[2],SimDim[3],1)
-
-
-                """
-                EnergyVector =EnergyEvalSim(LMPvect,OLatticeSites,HFLatticeSites,PossibleNeighbors,Temp,MD_timestep,SimDim);
-
-                #Use boltzmann weights to find relative probability of each state
-                options=1:NumSites;
-                weights=exp.(-EnergyVector./Temp./Kb_ev);
-                #Random sample to determine if we accept move
-                weights[isnan.(weights)].=1;
-                moveAccepted=sample(options,Weights(weights));
-                display(weights)
-                display(moveAccepted)
-                #OLatticeSites[PossibleNeighbors[moveAccepted,1],7]=1;
-                """
+                diff,rf = py"dimer_search"(indi,SimDim[1],SimDim[2],SimDim[3],1)
 
                 #OLatticeSites=vcat(OLatticeSites,[LocOxy[1] 4 0 PossibleNeighbors[moveAccepted,1:3]' 1]);
                 OLatticeSites=OLatticeSites[LocOxy[1].!=OLatticeSites[:,1],:]; #Remove Moving Atom From List
                 r0bx, r0by, r0bz = rf
                 OLatticeSites=vcat(OLatticeSites,[LocOxy[1] 4 0 r0bx r0by r0bz 1]);
-                DiffRate = 2*AdsRate
-                dt = DiffRate/1*log(1/(rand(1)[1]))
+                dt = 1/(TrsRate)*log(1/(rand(1)[1]))
                 Time=Time+dt;
 
                 ##################################################################
 
-                if MoveCounter % 15 == 0
+                if MoveCounter % 10 == 0
                     println("Minimize Coords<<<<<<<<<<<<<<<")
                     OLatticeSites,HFLatticeSites = MinimizeCoords(LMPvect,OLatticeSites,HFLatticeSites,Temp,MD_timestep,SimDim,smallMinSteps,smallMDsteps); # Minimize Coordinates
                 end
@@ -858,14 +847,24 @@ function Run_KMC(Temp, Press, KMCparams, MaxKMCtime)
         end
 
         if MoveCounter % 15 == 0
+            if isfile("log.lammps")
+                rm("log.lammps")
+                open("log.lammps","a")
+            end
+        end;
+
+        if MoveCounter % 50 == 0
             write_time()
-            rm("log.lammps")
-            open("log.lammps","a")
+            if isfile("log_trial.txt")
+                rm("log_trial.txt")
+                open("log_trial.txt","a")
+            end
         end;
 
         MoveCounter=MoveCounter+1
         dump_CONFIG();
-        display([Time, NumbOxy]);
+        println("Time #Haf #Oxy");
+        println([Time,NumbHaf,NumbOxy]');
     end
 end
 
