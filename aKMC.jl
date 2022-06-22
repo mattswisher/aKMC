@@ -16,7 +16,7 @@ include("LMP_EnergyEval3.jl")
 ## Main Function:
 function main()
     KMC_param=[38.5952545516548, 1.681903628276755]; #29
-    Run_KMC(2400,1.013,KMC_param,1100)
+    Run_KMC(2000,1.013,KMC_param,1100)
 end
 
 ## Parameter Optimization Target Function
