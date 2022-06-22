@@ -127,7 +127,7 @@ function MinimizeListedAtoms(Full_LMPvect,OLatticeSites,HFLatticeSites,MinOxyVec
 	newOLatticeSites=[];
 	newHFLatticeSites=[];
 	#Basic LMP setup
-	#try
+	try
 		command(LMP_v,"units  metal");
 		command(LMP_v,"atom_style  charge");
 		command(LMP_v,"dimension  3");
@@ -213,11 +213,11 @@ function MinimizeListedAtoms(Full_LMPvect,OLatticeSites,HFLatticeSites,MinOxyVec
 		KeyFrozen=newHFLatticeSites[:,2].>4;
 		newHFLatticeSites[KeyFrozen,2]=newHFLatticeSites[KeyFrozen,2].-4;
 		
-	#catch
-	#	newOLatticeSites=OLatticeSites;
-	#	newHFLatticeSites=HFLatticeSites;
-	#	println("Minimize Sim Failed");
-	#end
+	catch
+		newOLatticeSites=OLatticeSites;
+		newHFLatticeSites=HFLatticeSites;
+		println("Minimize Sim Failed");
+	end
 	
 	return newOLatticeSites,newHFLatticeSites
 end
